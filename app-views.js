@@ -401,6 +401,7 @@
 
   function openLightbox(list, idx) {
     const lb = document.getElementById('lightbox');
+    list = list.slice();   // ลบรูปใน lightbox แล้วไม่กระทบรายการของหน้าคลังรูป
     const unitsById = {}; A.active('units').forEach(function (u) { unitsById[u.id] = u; });
     function show() {
       const x = list[idx]; if (!x) return;
@@ -411,7 +412,8 @@
         esc([U.thDate(x.date), x.time, x.category, u ? 'ชิ้นงาน ' + u.code : '', x.km ? 'กม.' + x.km : '', x.side, (x.exif && (x.exif.make || x.exif.model)) ? '📷 ' + [x.exif.make, x.exif.model].filter(Boolean).join(' ') : ''].filter(Boolean).join(' · ')) +
         (x.flag ? ' · ⚠ ' + esc(x.flag) : '') + (x.noExif ? ' · ไม่มีข้อมูลกล้องในไฟล์' : '') + ' · ' + (idx + 1) + '/' + list.length + '</span></div>' +
         (x.exif && x.exif.lat ? '<a class="btn btn-sm btn-header" target="_blank" rel="noopener" href="https://www.google.com/maps?q=' + x.exif.lat + ',' + x.exif.lng + '">แผนที่</a>' : '') +
-        '<button class="btn btn-sm btn-header" id="lbDl">ดาวน์โหลด</button><button class="btn btn-sm btn-header" id="lbEd">แก้ไข</button><button class="btn btn-sm btn-header" id="lbX">ปิด ✕</button></div>';
+        '<button class="btn btn-sm btn-header" id="lbDl">ดาวน์โหลด</button><button class="btn btn-sm btn-header" id="lbEd">แก้ไข</button>' +
+        '<button class="btn btn-sm btn-danger" id="lbDel">ลบ</button><button class="btn btn-sm btn-header" id="lbX">ปิด ✕</button></div>';
       FBL.fileUrl(x.path).then(function (url) { const i = document.getElementById('lbImg'); if (i) i.src = url; });
       document.getElementById('lbPrev').onclick = function () { if (idx > 0) { idx--; show(); } };
       document.getElementById('lbNext').onclick = function () { if (idx < list.length - 1) { idx++; show(); } };
@@ -421,6 +423,16 @@
         try { const b = await (await fetch(url)).blob(); U.download(U.safeName(x.date + '_' + (x.desc || x.category || x.id)) + '.jpg', b); } catch (e) { window.open(url, '_blank', 'noopener'); }
       };
       document.getElementById('lbEd').onclick = function () { close(); photoEdit(x); };
+      // หน้าต่างยืนยันอยู่ใต้ lightbox (z-index) จึงซ่อน lightbox ระหว่างถาม แล้วแสดงรูปถัดไปต่อ
+      document.getElementById('lbDel').onclick = async function () {
+        lb.classList.remove('show');
+        if (!await A.confirm('ย้ายรูปนี้ไปถังขยะ?\n(กู้คืนได้ที่ ตั้งค่า → ถังขยะ)', 'ลบ', true)) { lb.classList.add('show'); return; }
+        try { await A.softDelete('photos', x, 'รูป ' + x.date); } catch (e) { A.toast(e.message, true); lb.classList.add('show'); return; }
+        list.splice(idx, 1);
+        if (!list.length) { close(); return; }
+        if (idx >= list.length) idx = list.length - 1;
+        lb.classList.add('show'); show();
+      };
     }
     function key(e) { if (e.key === 'Escape') close(); if (e.key === 'ArrowLeft' && idx > 0) { idx--; show(); } if (e.key === 'ArrowRight' && idx < list.length - 1) { idx++; show(); } }
     function close() { lb.classList.remove('show'); lb.innerHTML = ''; document.removeEventListener('keydown', key); }
