@@ -415,8 +415,12 @@ window.DOCS = (function () {
     return '';
   }
   async function photoUrls(pages) {
+    // ขอทุกรูปพร้อมกัน — ชั้นไฟล์จะรวมเป็นคำขอชุดเดียว (รูปจาก Google Drive โหลดทีละรูปจะช้า)
+    const items = [];
+    for (const pg of pages) for (const b of pg.blocks) if (b.k === 'photos') for (const x of b.items) items.push(x);
+    const got = await Promise.all(items.map(function (x) { return FBL.fileUrl(x.path); }));
     const urls = {};
-    for (const pg of pages) for (const b of pg.blocks) if (b.k === 'photos') for (const x of b.items) urls[x.id] = await FBL.fileUrl(x.path);
+    items.forEach(function (x, i) { urls[x.id] = got[i]; });
     return urls;
   }
   async function toHtml(pages, title) {
@@ -524,6 +528,7 @@ window.DOCS = (function () {
     return s + '</w:tbl>';
   }
   async function toDocx(pages) {
+    await photoUrls(pages);   // โหลดรูปทั้งหมดล่วงหน้าพร้อมกัน ด้านล่างจึงได้จากแคชทันที
     if (typeof JSZip === 'undefined') {
       await new Promise(function (res, rej) {
         const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';

@@ -596,7 +596,7 @@
         '<div class="field dwg"><label>ฉบับแก้ไข (Rev.)</label><input id="dfRev" value="' + esc(d.rev || '') + '"></div>' +
         '<div class="field dwg"><label>สถานะแบบ</label><select id="dfDst">' + A.opts([{ key: 'current', name: 'ฉบับใช้งาน' }, { key: 'superseded', name: 'ยกเลิก/มีฉบับใหม่แทน' }], d.drawingStatus || 'current') + '</select></div>' +
         '<div class="field"><label>ลิงก์ หรือ ที่เก็บในเครื่อง</label><input id="dfLink" value="' + esc(d.link || '') + '" placeholder="https://... หรือ D:\\...\\ไฟล์.pdf"></div>' +
-        '<div class="field span-all"><label>แนบไฟล์ (PDF/รูป/Word/Excel/DWG ≤ 30 MB)</label><div class="flex">' + (d.filePath ? '<button class="btn btn-sm btn-outline" id="dfOpen">เปิด ' + esc(d.fileName || 'ไฟล์') + '</button>' : '') +
+        '<div class="field span-all"><label>แนบไฟล์ (PDF/รูป/Word/Excel/DWG ≤ ' + Math.round(FBL.maxFileBytes / 1048576) + ' MB)</label><div class="flex">' + (d.filePath ? '<button class="btn btn-sm btn-outline" id="dfOpen">เปิด ' + esc(d.fileName || 'ไฟล์') + '</button>' : '') +
         '<input type="file" id="dfFile"></div><div id="dfProg" class="hint"></div></div>' +
         '<div class="field span-all"><label>หมายเหตุ</label><textarea id="dfNote">' + esc(d.note || '') + '</textarea></div></div>',
       foot: (rec ? '<button class="btn btn-danger left" id="dfDel">ลบ</button>' : '') + '<button class="btn btn-outline" data-close>ยกเลิก</button><button class="btn btn-primary" id="dfOk">บันทึก</button>'

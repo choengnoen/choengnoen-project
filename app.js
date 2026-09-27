@@ -811,6 +811,9 @@
       '<p class="hint" style="margin-top:-6px">ไฟล์สำรอง (.json) มีข้อมูลโครงการทั้งหมดยกเว้นตัวไฟล์รูป/เอกสาร — เก็บไว้ในที่ปลอดภัย ห้ามอัปโหลดขึ้นที่สาธารณะ</p>' +
       '<div class="flex">' + (S.p ? '<button class="btn btn-outline" id="bkJson">ส่งออกโครงการนี้ (.json)</button><button class="btn btn-outline" id="bkXlsx">ส่งออก Excel ทั้งโครงการ</button>' : '') +
       '<button class="btn btn-outline" id="bkImp">นำเข้าจากไฟล์ .json</button></div>' +
+      (priv && FBL.fileStore === 'drive' ? '<div style="margin-top:14px"><div class="small"><b>ย้ายรูป/ไฟล์เดิมจาก Firestore ไป Google Drive</b> (ทุกโครงการ)</div>' +
+        '<p class="hint" style="margin:4px 0 8px">ทำครั้งเดียวหลังตั้งค่า Drive — ไฟล์ที่ Drive ยืนยันว่าครบแล้วเท่านั้นจึงลบออกจาก Firestore ถ้าหยุดกลางทางกดใหม่ได้ ทำต่อจากที่ค้าง</p>' +
+        '<button class="btn btn-outline" id="mvDrive">เริ่มย้ายไฟล์</button><div id="mvInfo" class="hint" style="margin-top:6px"></div></div>' : '') +
       (FBL.mode === 'demo' ? '<p class="hint" style="margin-top:12px">โหมดทดลอง: <button class="btn btn-sm btn-danger" id="demoReset">ล้างข้อมูลทดลองทั้งหมด</button></p>' : '') + '</div>' +
       '</div><div>' +
       '<div class="card"><div class="section-title">ถังขยะ <span class="sub">' + (S.p ? esc(S.p.code) : '') + ' · ' + trash.length + ' รายการ</span></div>' +
@@ -899,18 +902,34 @@
     const bx = el.querySelector('#bkXlsx');
     if (bx) bx.onclick = function () { R.exportExcel(); };
     el.querySelector('#bkImp').onclick = function () { A.importJsonDialog(); };
+    const mv = el.querySelector('#mvDrive');
+    if (mv) mv.onclick = async function () {
+      if (!await A.confirm('ย้ายรูปและไฟล์เดิมทั้งหมดจาก Firestore ไป Google Drive?\nใช้เวลาประมาณ 1–2 วินาทีต่อไฟล์ ห้ามปิดหน้านี้จนกว่าจะเสร็จ', 'เริ่มย้าย')) return;
+      const info = el.querySelector('#mvInfo');
+      const done = A.busy(this, 'กำลังย้าย...');
+      try {
+        const r = await FBL.migrateFilesToDrive(function (ok, bad, path) { info.textContent = 'ย้ายแล้ว ' + ok + ' ไฟล์' + (bad ? ' · ไม่สำเร็จ ' + bad : '') + ' — ' + path; });
+        info.innerHTML = 'เสร็จแล้ว: ย้าย <b>' + r.done + '</b> ไฟล์' + (r.failed.length
+          ? ' · ไม่สำเร็จ <b style="color:var(--bad)">' + r.failed.length + '</b> ไฟล์ (ยังอยู่ใน Firestore เปิดดูได้ตามปกติ กดย้ายใหม่ได้)<br>' + r.failed.slice(0, 10).map(esc).join('<br>')
+          : (r.done ? '' : ' (ไม่มีไฟล์เหลือใน Firestore แล้ว)'));
+      } catch (e) { info.textContent = ''; A.toast(e.message, true); }
+      done();
+    };
     const dr = el.querySelector('#demoReset');
     if (dr) dr.onclick = async function () { if (await A.confirm('ล้างข้อมูลทดลองทั้งหมด (ผู้ใช้ โครงการ รูป) ในเบราว์เซอร์นี้?', 'ล้างข้อมูล', true)) { FBL.resetDemo(); location.reload(); } };
   };
 
-  // พื้นที่ไฟล์ที่โครงการนี้ใช้ (ประมาณ) เทียบโควตาฟรีของ Firestore 1 GB (รวมทุกโครงการ)
+  // พื้นที่ไฟล์ที่โครงการนี้ใช้ (ประมาณ) — เก็บใน Drive: เทียบพื้นที่บัญชี Google 15 GB · เก็บใน Firestore: เทียบโควตาฟรี 1 GB (รวมทุกโครงการ)
   function usageHtml() {
     let bytes = 0, n = 0;
     A.active('photos').forEach(function (x) { bytes += U.num(x.size) + (U.num(x.thumbSize) || U.num(x.size) * 0.1); n++; });
     A.active('docs').concat(A.active('tests')).forEach(function (x) { if (x.filePath) bytes += U.num(x.fileSize); });
-    const mb = bytes / 1048576, pct = mb / 1024 * 100;
-    return '<div style="margin:-4px 0 12px"><div class="small">พื้นที่ไฟล์ของโครงการนี้ประมาณ <b>' + mb.toFixed(1) + ' MB</b> (รูป ' + n + ' รูป) · โควตาฟรีรวมทุกโครงการ 1 GB' +
-      (FBL.mode === 'firebase' ? ' — ดูยอดจริงได้ที่ Firebase Console → Usage' : '') + '</div><div class="bar"><span style="width:' + Math.min(100, Math.max(0.5, pct)).toFixed(1) + '%"></span></div></div>';
+    const drive = FBL.fileStore === 'drive';
+    const mb = bytes / 1048576, pct = mb / (drive ? 15360 : 1024) * 100;
+    return '<div style="margin:-4px 0 12px"><div class="small">พื้นที่ไฟล์ของโครงการนี้ประมาณ <b>' + mb.toFixed(1) + ' MB</b> (รูป ' + n + ' รูป) · ' +
+      (drive ? 'เก็บใน Google Drive (พื้นที่ฟรีของบัญชี Google 15 GB ใช้ร่วมกับ Gmail)' : 'โควตาฟรีรวมทุกโครงการ 1 GB' +
+        (FBL.mode === 'firebase' ? ' — ดูยอดจริงได้ที่ Firebase Console → Usage' : '')) +
+      '</div><div class="bar"><span style="width:' + Math.min(100, Math.max(0.5, pct)).toFixed(1) + '%"></span></div></div>';
   }
 
   /* ======================= นำเข้า JSON ======================= */

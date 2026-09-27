@@ -1,5 +1,6 @@
 /* ==========================================================================
-   firebase-layer.js — ชั้นเชื่อมต่อข้อมูล (Authentication + Firestore — รูป/ไฟล์ก็เก็บใน Firestore ไม่ต้องใช้แพ็กเกจ Blaze)
+   firebase-layer.js — ชั้นเชื่อมต่อข้อมูล (Authentication + Firestore · รูป/ไฟล์เก็บใน Google Drive ผ่าน drive-bridge.gs
+                       ไม่ต้องใช้แพ็กเกจ Blaze — ถ้ายังไม่ตั้ง DRIVE_BRIDGE_URL จะเก็บใน Firestore แบบเดิม)
    ระบบควบคุมงานโครงการ หมวดทางหลวงเชิงเนิน แขวงทางหลวงระยอง
 
    ใช้โครงเดียวกับระบบงานอุบัติเหตุ:
@@ -27,6 +28,11 @@
     messagingSenderId: "694075265572",
     appId: "1:694075265572:web:14109f2bc45f53285ebeb1"
   };
+  // ▲▲▲ ------------------------------------------------------------------------------------ ▲▲▲
+
+  // ▼▼▼ วาง URL ของ drive-bridge (Apps Script → Deploy → Web app ลงท้ายด้วย /exec) ▼▼▼
+  //     เว้นว่าง = เก็บรูป/ไฟล์ใน Firestore แบบเดิม (พื้นที่ฟรีรวม 1 GB)
+  const DRIVE_BRIDGE_URL = 'https://script.google.com/macros/s/AKfycbzkhJTRPGBtYsaS7oiuo-eMjSKLCYgkJalxebDJUBfrjoNDEVx4MrSGFvpuir8l8S7e/exec';
   // ▲▲▲ ------------------------------------------------------------------------------------ ▲▲▲
 
   const EMAIL_DOMAIN = 'project.invalid';
@@ -335,20 +341,29 @@
       });
     };
 
-    /* ---------- ไฟล์ (เก็บใน Firestore — ไม่ต้องใช้ Storage/แพ็กเกจ Blaze) ----------
-       ไฟล์หนึ่งไฟล์ = เอกสาร files/{fid} (ข้อมูลไฟล์ + ชิ้นแรก d0)
-                     + ชิ้นที่เหลือใน files/{fid}/chunks/{1..n-1} ชิ้นละไม่เกิน 900 KB (Firestore จำกัด 1 MB ต่อเอกสาร)
-       รูปย่อ (~20 KB) จึงอ่านแค่ 1 ครั้ง · ไฟล์ไม่เปลี่ยนแปลงหลังอัปโหลด จึงอ่านจากแคชในเครื่องก่อน */
+    /* ---------- ไฟล์ ----------
+       หลัก: Google Drive ผ่าน drive-bridge.gs (Apps Script) — ไม่กินพื้นที่ Firestore 1 GB
+             อ่านแล้วเก็บสำเนาไว้ในเครื่อง (Cache Storage) ไฟล์ไม่เปลี่ยนหลังอัปโหลด จึงไม่ต้องโหลดซ้ำ
+             คำขออ่านที่เกิดพร้อมกัน (เช่น รูปย่อทั้งหน้า) รวมเป็นคำขอเดียว ครั้งละไม่เกิน 15 ไฟล์
+       เดิม: เก็บเป็นชิ้นใน Firestore — files/{fid} (ข้อมูลไฟล์ + ชิ้นแรก d0) + files/{fid}/chunks/{1..n-1}
+             ยังอ่าน/ลบได้ จนกว่าจะกด "ย้ายไฟล์เดิมไป Google Drive" ในหน้าตั้งค่า */
+    const DRIVE = /^https:\/\/script\.google\.com\/.+\/exec$/.test(DRIVE_BRIDGE_URL);
     const CHUNK = 900 * 1024;
-    const urlCache = {};
+    const urlCache = {}, pending = {};
     FBL.storageReady = true;
-    FBL.maxFileBytes = 10 * 1024 * 1024;
+    FBL.fileStore = DRIVE ? 'drive' : 'firestore';
+    FBL.maxFileBytes = (DRIVE ? 20 : 10) * 1024 * 1024;
+    function tooBig() { return new Error('ไฟล์ใหญ่เกิน ' + (FBL.maxFileBytes / 1048576) + ' MB — ให้เก็บใน Google Drive แล้วใส่เป็นลิงก์แทน'); }
+
+    /* --- Firestore (แบบเดิม) --- */
     function fid(path) { return String(path).replace(/\//g, '~'); }
     function fileRef(path) { return db.collection('files').doc(fid(path)); }
     function toBlobField(u8) { return firebase.firestore.Blob.fromUint8Array(u8); }
-    FBL.uploadFile = async function (path, blob, onProgress) {
-      if (blob.size > FBL.maxFileBytes) throw new Error('ไฟล์ใหญ่เกิน 10 MB — ให้เก็บใน Google Drive แล้วใส่เป็นลิงก์แทน');
-      const u8 = new Uint8Array(await blob.arrayBuffer());
+    async function getCacheFirst(ref) {
+      try { const s = await ref.get({ source: 'cache' }); if (s.exists) return s; } catch (e) { /* ไม่มีในแคช */ }
+      return ref.get();
+    }
+    async function legacyUpload(path, u8, type, onProgress) {
       const n = Math.max(1, Math.ceil(u8.length / CHUNK));
       const ref = fileRef(path);
       try {
@@ -358,47 +373,161 @@
           if (onProgress) onProgress(i / n);
         }
         await ref.set({
-          path: path, type: blob.type || 'application/octet-stream', size: u8.length, n: n,
+          path: path, type: type, size: u8.length, n: n,
           d0: toBlobField(u8.subarray(0, CHUNK)),
           uploadedAt: nowIso(), uploadedBy: FBL.user ? FBL.user.name : ''
         });
-        if (onProgress) onProgress(1);
       } catch (e) { throw new Error(thErr(e)); }
+    }
+    async function legacyBlobFrom(snap) {
+      const m = snap.data();
+      const parts = [m.d0.toUint8Array()];
+      for (let i = 1; i < (m.n || 1); i++) {
+        const c = await getCacheFirst(snap.ref.collection('chunks').doc(String(i)));
+        if (!c.exists) throw new Error('ไฟล์ไม่ครบ');
+        parts.push(c.data().d.toUint8Array());
+      }
+      return new Blob(parts, { type: m.type || 'application/octet-stream' });
+    }
+    async function legacyBlob(path) {
+      const snap = await getCacheFirst(fileRef(path));
+      return snap.exists ? legacyBlobFrom(snap) : null;
+    }
+    async function legacyDeleteSnap(snap) {
+      const n = snap.data().n || 1;
+      for (let i = 1; i < n; i++) await snap.ref.collection('chunks').doc(String(i)).delete();
+      await snap.ref.delete();
+    }
+
+    /* --- Google Drive --- */
+    async function bridge(body) {
+      if (!auth.currentUser) throw new Error('ยังไม่ได้ล็อกอิน');
+      body.idToken = await auth.currentUser.getIdToken();
+      let r, j;
+      // text/plain = ไม่ต้องมีคำขอ preflight (Apps Script ไม่รองรับ OPTIONS)
+      try { r = await fetch(DRIVE_BRIDGE_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }); }
+      catch (e) { throw new Error('เชื่อมต่อ Google Drive ไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่'); }
+      try { j = await r.json(); } catch (e) { throw new Error('ตัวกลาง Google Drive ตอบกลับผิดรูปแบบ (ตรวจสอบการ Deploy ของ drive-bridge ว่าเลือก Who has access = Anyone)'); }
+      if (!j.ok) throw new Error(j.error || 'Google Drive ทำรายการไม่สำเร็จ');
+      return j;
+    }
+    function toB64(u8) {
+      let s = '';
+      for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+      return btoa(s);
+    }
+    function fromB64(s) {
+      const bin = atob(s), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      return u8;
+    }
+    async function drivePut(path, u8, type) {
+      const j = await bridge({ action: 'put', path: path, type: type, data: toB64(u8) });
+      if (j.size !== u8.length) throw new Error('อัปโหลดไม่ครบ กรุณาลองใหม่');
+    }
+    let queue = [], timer = null;
+    function driveGet(path) {
+      return new Promise(function (resolve, reject) {
+        queue.push({ path: path, resolve: resolve, reject: reject });
+        if (!timer) timer = setTimeout(flushQueue, 40);
+      });
+    }
+    function flushQueue() {
+      timer = null;
+      const all = queue.splice(0, queue.length);
+      for (let i = 0; i < all.length; i += 15) {
+        const part = all.slice(i, i + 15);
+        bridge({ action: 'get', paths: part.map(function (x) { return x.path; }) }).then(function (j) {
+          const by = {};
+          (j.files || []).forEach(function (f) { by[f.path] = f; });
+          part.forEach(function (x) {
+            const f = by[x.path];
+            x.resolve(f && !f.missing ? new Blob([fromB64(f.data)], { type: f.type || 'application/octet-stream' }) : null);
+          });
+        }, function (e) { part.forEach(function (x) { x.reject(e); }); });
+      }
+    }
+
+    /* --- สำเนาในเครื่อง (Cache Storage) — ใช้ไม่ได้ก็ข้ามไป --- */
+    const LOCAL = 'pcs-files-v1';
+    function localKey(path) { return new URL('__pcs_files__/' + encodeURIComponent(path), location.href).href; }
+    async function localGet(path) {
+      try { const r = await (await caches.open(LOCAL)).match(localKey(path)); return r ? await r.blob() : null; } catch (e) { return null; }
+    }
+    async function localPut(path, blob) {
+      try { await (await caches.open(LOCAL)).put(localKey(path), new Response(blob, { headers: { 'Content-Type': blob.type || 'application/octet-stream' } })); } catch (e) { /* ข้าม */ }
+    }
+    async function localDel(path) { try { await (await caches.open(LOCAL)).delete(localKey(path)); } catch (e) { /* ข้าม */ } }
+
+    /* --- ใช้งาน --- */
+    FBL.uploadFile = async function (path, blob, onProgress) {
+      if (blob.size > FBL.maxFileBytes) throw tooBig();
+      const u8 = new Uint8Array(await blob.arrayBuffer());
+      const type = blob.type || 'application/octet-stream';
+      if (DRIVE) {
+        if (onProgress) onProgress(0.05);
+        await drivePut(path, u8, type);
+        await localPut(path, blob);
+      } else await legacyUpload(path, u8, type, onProgress);
+      if (onProgress) onProgress(1);
       return path;
     };
-    async function getCacheFirst(ref) {
-      try { const s = await ref.get({ source: 'cache' }); if (s.exists) return s; } catch (e) { /* ไม่มีในแคช */ }
-      return ref.get();
-    }
-    FBL.fileUrl = async function (path) {
-      if (!path) return '';
-      if (urlCache[path]) return urlCache[path];
-      try {
-        const ref = fileRef(path);
-        const snap = await getCacheFirst(ref);
-        if (!snap.exists) return '';
-        const m = snap.data();
-        const parts = [m.d0.toUint8Array()];
-        for (let i = 1; i < (m.n || 1); i++) {
-          const c = await getCacheFirst(ref.collection('chunks').doc(String(i)));
-          if (!c.exists) throw new Error('ไฟล์ไม่ครบ');
-          parts.push(c.data().d.toUint8Array());
-        }
-        urlCache[path] = URL.createObjectURL(new Blob(parts, { type: m.type || 'application/octet-stream' }));
-        return urlCache[path];
-      } catch (e) { console.warn('fileUrl', path, e && (e.code || e.message)); return ''; }
+    FBL.fileUrl = function (path) {
+      if (!path) return Promise.resolve('');
+      if (urlCache[path]) return Promise.resolve(urlCache[path]);
+      if (pending[path]) return pending[path];
+      pending[path] = (async function () {
+        try {
+          let blob = DRIVE ? await localGet(path) : null;
+          if (!blob && DRIVE) { blob = await driveGet(path); if (blob) localPut(path, blob); }
+          if (!blob) blob = await legacyBlob(path);   // ไฟล์เก่าที่ยังไม่ได้ย้ายออกจาก Firestore
+          if (!blob) return '';
+          urlCache[path] = URL.createObjectURL(blob);
+          return urlCache[path];
+        } catch (e) { console.warn('fileUrl', path, e && (e.code || e.message)); return ''; }
+        finally { delete pending[path]; }
+      })();
+      return pending[path];
     };
     FBL.deleteFile = async function (path) {
       requirePrivileged();
-      const ref = fileRef(path);
       try {
-        const snap = await ref.get();
-        if (!snap.exists) return;
-        const n = snap.data().n || 1;
-        for (let i = 1; i < n; i++) await ref.collection('chunks').doc(String(i)).delete();
-        await ref.delete();
-        if (urlCache[path]) { URL.revokeObjectURL(urlCache[path]); delete urlCache[path]; }
+        if (DRIVE) await bridge({ action: 'del', path: path });   // เข้าถังขยะของ Drive (กู้คืนได้ 30 วัน)
+        const snap = await fileRef(path).get();
+        if (snap.exists) await legacyDeleteSnap(snap);
       } catch (e) { throw new Error(thErr(e)); }
+      await localDel(path);
+      if (urlCache[path]) { URL.revokeObjectURL(urlCache[path]); delete urlCache[path]; }
+    };
+
+    // ย้ายไฟล์เดิมทั้งหมดจาก Firestore ไป Drive — ลบออกจาก Firestore เฉพาะไฟล์ที่ Drive ยืนยันขนาดตรงกันแล้ว
+    // onProgress(ย้ายแล้ว, ไม่สำเร็จ, path ล่าสุด) · กดซ้ำได้ ไฟล์ที่ย้ายแล้วจะไม่อยู่ใน Firestore อีก
+    FBL.migrateFilesToDrive = async function (onProgress) {
+      requirePrivileged();
+      if (!DRIVE) throw new Error('ยังไม่ได้ตั้งค่า DRIVE_BRIDGE_URL ใน firebase-layer.js');
+      await bridge({ action: 'ping' });
+      let done = 0, last = null;
+      const failed = [];
+      for (;;) {
+        let q = db.collection('files').orderBy(firebase.firestore.FieldPath.documentId()).limit(10);
+        if (last) q = q.startAfter(last);
+        let snap;
+        try { snap = await q.get(); } catch (e) { throw new Error(thErr(e)); }
+        if (snap.empty) break;
+        for (const d of snap.docs) {
+          last = d;
+          const path = d.data().path || d.id.replace(/~/g, '/');
+          try {
+            const blob = await legacyBlobFrom(d);
+            await drivePut(path, new Uint8Array(await blob.arrayBuffer()), blob.type);
+            await localPut(path, blob);
+            await legacyDeleteSnap(d);
+            done++;
+          } catch (e) { failed.push(path + ' — ' + (e.message || thErr(e))); }
+          if (onProgress) onProgress(done, failed.length, path);
+        }
+      }
+      return { done: done, failed: failed };
     };
   }
 
@@ -573,6 +702,7 @@
     }
     const urlCache = {};
     FBL.storageReady = true;
+    FBL.fileStore = 'demo';
     FBL.maxFileBytes = 10 * 1024 * 1024;   // เท่าโหมด Firebase
     FBL.uploadFile = async function (path, blob, onProgress) {
       if (blob.size > FBL.maxFileBytes) throw new Error('ไฟล์ใหญ่เกิน 10 MB — ให้เก็บใน Google Drive แล้วใส่เป็นลิงก์แทน');
