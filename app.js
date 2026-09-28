@@ -95,7 +95,7 @@
   function renderAuthGate(errorMsg) {
     const g = gate(); hideLoading(); g.classList.add('show');
     $('appHeader').style.display = 'none'; $('main').style.display = 'none';
-    const head = '<img src="logo.png" alt="ตรากรมทางหลวง" class="auth-logo"><h2>ผู้ควบคุมงานโครงการ</h2>' +
+    const head = '<img src="logo.png" alt="ตรากรมทางหลวง" class="auth-logo"><h2>งานควบคุมงานโครงการ</h2>' +
       '<p class="auth-sub">หมวดทางหลวงเชิงเนิน · แขวงทางหลวงระยอง</p>';
     const demo = FBL.mode === 'demo' ? '<div class="auth-demo">โหมดทดลอง: ยังไม่ได้เชื่อม Firebase — ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น</div>' : '';
     const errHtml = '<p class="hint auth-error" id="gateError" style="' + (errorMsg ? '' : 'display:none') + '">' + esc(errorMsg || '') + '</p>';
@@ -257,7 +257,7 @@
     if (fn) { try { fn(el); } catch (e) { console.error(e); el.innerHTML = '<div class="card"><b>แสดงผลไม่สำเร็จ</b><p class="hint">' + esc(e.message) + '</p></div>'; } }
   };
   function welcomeHtml() {
-    return '<div class="card welcome"><h2>ยินดีต้อนรับสู่ ผู้ควบคุมงานโครงการ</h2>' +
+    return '<div class="card welcome"><h2>ยินดีต้อนรับสู่ งานควบคุมงานโครงการ</h2>' +
       '<p class="muted">เริ่มจากสร้างโครงการใหม่ แล้วกรอกข้อมูลสัญญา หรือนำเข้าข้อมูลโครงการจากไฟล์สำรอง (.json)</p>' +
       '<div class="flex" style="justify-content:center;margin-top:14px"><button class="btn btn-primary" id="wNew">+ สร้างโครงการใหม่</button>' +
       '<button class="btn btn-outline" id="wImp">นำเข้าจากไฟล์ .json</button></div></div>';
@@ -791,8 +791,7 @@
   /* ======================= ตั้งค่า ======================= */
   A.views.settings = function (el) {
     const u = FBL.user, owner = u.isOwner, priv = A.can();
-    const trash = [];
-    if (S.p) FBL.SUBS.forEach(function (sub) { (S.subs[sub] || []).forEach(function (r) { if (r.deletedAt) trash.push({ sub: sub, r: r }); }); });
+    const trash = [];    if (S.p) FBL.SUBS.forEach(function (sub) { (S.subs[sub] || []).forEach(function (r) { if (r.deletedAt) trash.push({ sub: sub, r: r }); }); });
     const subName = { daily: 'บันทึกประจำวัน', docs: 'เอกสาร', tests: 'ผลทดสอบ', units: 'ชิ้นงาน', photos: 'รูปถ่าย', safety: 'ตรวจความปลอดภัย' };
     el.innerHTML =
       '<div class="split"><div>' +
@@ -813,8 +812,7 @@
       '<button class="btn btn-outline" id="bkImp">นำเข้าจากไฟล์ .json</button></div>' +
       (priv && FBL.fileStore === 'drive' ? '<div style="margin-top:14px"><div class="small"><b>ย้ายรูป/ไฟล์เดิมจาก Firestore ไป Google Drive</b> (ทุกโครงการ)</div>' +
         '<p class="hint" style="margin:4px 0 8px">ทำครั้งเดียวหลังตั้งค่า Drive — ไฟล์ที่ Drive ยืนยันว่าครบแล้วเท่านั้นจึงลบออกจาก Firestore ถ้าหยุดกลางทางกดใหม่ได้ ทำต่อจากที่ค้าง</p>' +
-        '<button class="btn btn-outline" id="mvDrive">เริ่มย้ายไฟล์</button><div id="mvInfo" class="hint" style="margin-top:6px"></div></div>' : '') +
-      (FBL.mode === 'demo' ? '<p class="hint" style="margin-top:12px">โหมดทดลอง: <button class="btn btn-sm btn-danger" id="demoReset">ล้างข้อมูลทดลองทั้งหมด</button></p>' : '') + '</div>' +
+        '<button class="btn btn-outline" id="mvDrive">เริ่มย้ายไฟล์</button><div id="mvInfo" class="hint" style="margin-top:6px"></div></div>' : '') +      (FBL.mode === 'demo' ? '<p class="hint" style="margin-top:12px">โหมดทดลอง: <button class="btn btn-sm btn-danger" id="demoReset">ล้างข้อมูลทดลองทั้งหมด</button></p>' : '') + '</div>' +
       '</div><div>' +
       '<div class="card"><div class="section-title">ถังขยะ <span class="sub">' + (S.p ? esc(S.p.code) : '') + ' · ' + trash.length + ' รายการ</span></div>' +
       (trash.length ? '<div class="table-wrap"><table class="data"><thead><tr><th>ประเภท</th><th>รายการ</th><th>ลบเมื่อ</th><th></th></tr></thead><tbody>' +
@@ -922,7 +920,7 @@
   // พื้นที่ไฟล์ที่โครงการนี้ใช้ (ประมาณ) — เก็บใน Drive: เทียบพื้นที่บัญชี Google 15 GB · เก็บใน Firestore: เทียบโควตาฟรี 1 GB (รวมทุกโครงการ)
   function usageHtml() {
     let bytes = 0, n = 0;
-    A.active('photos').forEach(function (x) { bytes += U.num(x.size) + (U.num(x.thumbSize) || U.num(x.size) * 0.1); n++; });
+    A.active('photos').forEach(function (x) { bytes += U.num(x.size) + (x.thumbPath ? (U.num(x.thumbSize) || U.num(x.size) * 0.1) : 0); n++; });   // รูปใหม่ไม่มีรูปย่อ
     A.active('docs').concat(A.active('tests')).forEach(function (x) { if (x.filePath) bytes += U.num(x.fileSize); });
     const drive = FBL.fileStore === 'drive';
     const mb = bytes / 1048576, pct = mb / (drive ? 15360 : 1024) * 100;
