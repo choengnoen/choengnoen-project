@@ -285,9 +285,14 @@ window.U = (function () {
     const li = await loadImage(file);
     try {
       const full = await toJpeg(li.img, 1280, 0.72);   // ~150–250 KB ประหยัดโควตาฟรี 1 GB ของ Firestore
-      const thumb = await toJpeg(li.img, 360, 0.65);
+      const thumb = await toJpeg(li.img, 360, 0.65);   // ~15–25 KB สำหรับหน้าคลังรูป
       return { full: full.blob, thumb: thumb.blob, exif: exif, width: full.w, height: full.h };
     } finally { URL.revokeObjectURL(li.url); }
+  }
+  // รูปย่อจากรูปที่อัปโหลดไว้แล้ว (ใช้สร้างรูปย่อให้รูปเดิมที่ยังไม่มี)
+  async function makeThumb(blob) {
+    const li = await loadImage(blob);
+    try { return (await toJpeg(li.img, 360, 0.65)).blob; } finally { URL.revokeObjectURL(li.url); }
   }
 
   function download(name, blob) {
@@ -303,6 +308,6 @@ window.U = (function () {
     dow: dow, thDate: thDate, thRange: thRange, thMonth: thMonth, thMonthShort: thMonthShort, thDow: thDow, fiscalYear: fiscalYear,
     num: num, money: money, pct: pct, kmToM: kmToM, fmtKm: fmtKm, contract: contract, boqTotal: boqTotal,
     planCum: planCum, actualCum: actualCum, actualValue: actualValue, itemFraction: itemFraction, periods: periods,
-    nextDocNo: nextDocNo, readExif: readExif, processPhoto: processPhoto, download: download, safeName: safeName
+    nextDocNo: nextDocNo, readExif: readExif, processPhoto: processPhoto, makeThumb: makeThumb, download: download, safeName: safeName
   };
 })();

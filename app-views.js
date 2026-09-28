@@ -359,7 +359,7 @@
             const u = unitMap[x.unitId];
             return '<div class="ph" data-id="' + esc(x.id) + '">' + (ui.selMode ? '<input type="checkbox" class="sel" data-sel="' + esc(x.id) + '"' + (ui.sel[x.id] ? ' checked' : '') + '>' : '') +
               (x.flag ? '<span class="flag badge b-warn" title="' + esc(x.flag) + '">!</span>' : '') +
-              '<div class="img" data-thumb="' + esc(x.thumbPath || x.path) + '"></div><div class="cap"><b>' + esc(x.desc || x.category || '') + '</b><span>' +
+              '<div class="img" data-thumb="' + esc(x.thumbPath || x.path) + '"' + (x.thumbPath ? ' data-stored="1"' : '') + '></div><div class="cap"><b>' + esc(x.desc || x.category || '') + '</b><span>' +
               esc([x.time, u ? u.code : '', x.km ? 'กม.' + x.km : '', x.side].filter(Boolean).join(' · ')) + '</span></div></div>';
           }).join('') + '</div>';
       }).join('') : '<div class="empty">ยังไม่มีรูปตามเงื่อนไข</div>') + '</div>';
@@ -393,7 +393,8 @@
       entries.forEach(function (en) {
         if (!en.isIntersecting) return;
         const div = en.target; photoObserver.unobserve(div);
-        FBL.fileUrl(div.dataset.thumb).then(function (u) { if (u) div.style.backgroundImage = 'url("' + u + '")'; });
+        // รูปเก่าที่มีไฟล์รูปย่ออยู่แล้วใช้ไฟล์นั้น · รูปใหม่ย่อจากรูปเต็มแล้วเก็บไว้ในเครื่อง
+        (div.dataset.stored ? FBL.fileUrl(div.dataset.thumb) : FBL.thumbUrl(div.dataset.thumb)).then(function (u) { if (u) div.style.backgroundImage = 'url("' + u + '")'; });
       });
     }, { rootMargin: '300px' });
     el.querySelectorAll('[data-thumb]').forEach(function (d) { photoObserver.observe(d); });
@@ -519,8 +520,9 @@
           const date = base.date || pr.exif.date || (x.f.lastModified ? U.iso(new Date(x.f.lastModified)) : U.today());
           const dir = 'projects/' + S.pid + '/photos/' + date + '/';
           x.st = 'กำลังอัปโหลด...'; draw();
+          // เก็บใน Drive เฉพาะรูปเต็ม — รูปย่อสำหรับหน้าคลังรูปเก็บไว้ในเครื่องเท่านั้น (เครื่องอื่นสร้างเองเมื่อเปิดครั้งแรก)
           await FBL.uploadFile(dir + id + '.jpg', pr.full, function (f) { x.st = 'อัปโหลด ' + Math.round(f * 100) + '%'; draw(); });
-          await FBL.uploadFile(dir + 'thumbs/' + id + '.jpg', pr.thumb);
+          await FBL.putThumb(dir + id + '.jpg', pr.thumb);
           // flag = ข้อสังเกตที่ต้องตรวจก่อนใช้เป็นหลักฐาน (ขึ้นเตือนที่หน้าภาพรวม)
           // noExif = ไม่มีข้อมูลกล้อง/วันที่ถ่าย — ปกติของรูปที่ส่งผ่าน LINE จึงแค่บันทึกไว้ ไม่เตือน
           let flag = '';
@@ -528,7 +530,7 @@
           const noExif = !pr.exif.make && !pr.exif.model && !pr.exif.dateTime;
           await A.save('photos', {
             id: id, date: date, time: pr.exif.time || '', category: base.category, unitId: base.unitId, unitCode: u ? u.code : '', km: base.km, side: base.side, desc: base.desc,
-            path: dir + id + '.jpg', thumbPath: dir + 'thumbs/' + id + '.jpg', width: pr.width, height: pr.height, size: pr.full.size, thumbSize: pr.thumb.size,
+            path: dir + id + '.jpg', thumbPath: '', width: pr.width, height: pr.height, size: pr.full.size, thumbSize: 0,
             originalName: x.f.name, originalSize: x.f.size, exif: { make: pr.exif.make || '', model: pr.exif.model || '', software: pr.exif.software || '', dateTime: pr.exif.dateTime || '', lat: pr.exif.lat || null, lng: pr.exif.lng || null },
             flag: flag, noExif: noExif
           }, 'รูป ' + date);

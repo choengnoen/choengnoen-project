@@ -105,6 +105,45 @@
 
   if (DEMO) setupDemo(); else setupFirebase();
 
+  /* ---------- รูปย่อ (เก็บในเครื่องเท่านั้น ไม่อัปโหลดขึ้น Drive) ----------
+     หน้าคลังรูปใช้รูปย่อ ~20 KB แทนรูปเต็ม ~200 KB — ครั้งแรกย่อจากรูปเต็มแล้วเก็บไว้ ครั้งต่อไปเปิดได้ทันที */
+  (function () {
+    const THUMBS = 'pcs-thumbs-v1';
+    const thumbCache = {}, thumbPending = {};
+    function thumbKey(path) { return new URL('__pcs_thumbs__/' + encodeURIComponent(path), location.href).href; }
+    async function thumbGet(path) {
+      try { const r = await (await caches.open(THUMBS)).match(thumbKey(path)); return r ? await r.blob() : null; } catch (e) { return null; }
+    }
+    FBL.putThumb = async function (path, blob) {
+      try { await (await caches.open(THUMBS)).put(thumbKey(path), new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } })); } catch (e) { /* ข้าม */ }
+    };
+    FBL.thumbUrl = function (path) {
+      if (!path) return Promise.resolve('');
+      if (thumbCache[path]) return Promise.resolve(thumbCache[path]);
+      if (thumbPending[path]) return thumbPending[path];
+      thumbPending[path] = (async function () {
+        try {
+          let blob = await thumbGet(path);
+          if (!blob) {
+            const full = await FBL.fileUrl(path);
+            if (!full) return '';
+            try { blob = await window.U.makeThumb(await (await fetch(full)).blob()); } catch (e) { return full; }   // ย่อไม่ได้ → ใช้รูปเต็ม
+            FBL.putThumb(path, blob);
+          }
+          thumbCache[path] = URL.createObjectURL(blob);
+          return thumbCache[path];
+        } finally { delete thumbPending[path]; }
+      })();
+      return thumbPending[path];
+    };
+    const deleteFile = FBL.deleteFile;
+    FBL.deleteFile = async function (path) {
+      await deleteFile(path);
+      try { await (await caches.open(THUMBS)).delete(thumbKey(path)); } catch (e) { /* ข้าม */ }
+      if (thumbCache[path]) { URL.revokeObjectURL(thumbCache[path]); delete thumbCache[path]; }
+    };
+  })();
+
   /* ======================================================================
      โหมด Firebase
      ====================================================================== */
