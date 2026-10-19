@@ -33,7 +33,7 @@
     el.querySelector('#dyMonth').onchange = function () { ui.month = this.value; A.render(); };
     el.querySelector('#dyQ').oninput = function () { ui.q = this.value; clearTimeout(ui.t); ui.t = setTimeout(A.render, 300); };
     el.querySelectorAll('tr[data-id]').forEach(function (tr) {
-      tr.onclick = function () { A.dailyForm(A.active('daily').find(function (d) { return d.id === tr.dataset.id; })); };
+      tr.ondblclick = function () { A.dailyForm(A.active('daily').find(function (d) { return d.id === tr.dataset.id; })); };
     });
     if (ui.q) { const q = el.querySelector('#dyQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
   };
@@ -271,7 +271,7 @@
         }).join('') + '</tbody></table></div>' : '<div class="empty">ยังไม่มีรายการ</div>') + '</div>';
     el.querySelector('#qNew').onclick = function () { testForm(null); };
     el.querySelectorAll('[data-f]').forEach(function (c) { c.onclick = function () { ui.f = c.dataset.f; A.render(); }; });
-    el.querySelectorAll('tr[data-id]').forEach(function (tr) { tr.onclick = function () { testForm(A.active('tests').find(function (t) { return t.id === tr.dataset.id; })); }; });
+    el.querySelectorAll('tr[data-id]').forEach(function (tr) { tr.ondblclick = function () { testForm(A.active('tests').find(function (t) { return t.id === tr.dataset.id; })); }; });
   };
 
   function testForm(rec) {
@@ -595,7 +595,7 @@
     el.querySelectorAll('[data-open]').forEach(function (a) {
       a.onclick = async function (e) { e.preventDefault(); e.stopPropagation(); const d = list.find(function (x) { return x.id === a.dataset.open; }); const u = await FBL.fileUrl(d.filePath); if (u) window.open(u, '_blank', 'noopener'); };
     });
-    el.querySelectorAll('tr[data-id]').forEach(function (tr) { tr.onclick = function (e) { if (e.target.closest('a')) return; docForm(list.find(function (d) { return d.id === tr.dataset.id; })); }; });
+    el.querySelectorAll('tr[data-id]').forEach(function (tr) { tr.ondblclick = function (e) { if (e.target.closest('a')) return; docForm(list.find(function (d) { return d.id === tr.dataset.id; })); }; });
   };
 
   function docForm(rec) {

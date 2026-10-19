@@ -394,7 +394,7 @@
     A.bindGo(el);
     el.querySelector('#dNewDaily').onclick = function () { A.dailyForm(null); };
     el.querySelectorAll('tr[data-id]').forEach(function (tr) {
-      tr.onclick = function () { A.dailyForm(A.active('daily').find(function (d) { return d.id === tr.dataset.id; })); };
+      tr.ondblclick = function () { A.dailyForm(A.active('daily').find(function (d) { return d.id === tr.dataset.id; })); };
     });
   };
   function kpi(lb, big, sm, barPct, marker) {
@@ -750,7 +750,7 @@
       };
     };
     el.querySelector('#sfNew').onclick = function () { safetyForm(null); };
-    el.querySelectorAll('[data-sf]').forEach(function (tr) { tr.onclick = function () { safetyForm(safety.find(function (s) { return s.id === tr.dataset.sf; })); }; });
+    el.querySelectorAll('[data-sf]').forEach(function (tr) { tr.ondblclick = function () { safetyForm(safety.find(function (s) { return s.id === tr.dataset.sf; })); }; });
   };
 
   function safetyForm(rec) {
